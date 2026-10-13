@@ -1,32 +1,25 @@
-import express from "express";
-import dotenv from "dotenv";
+import app from "./app.js";
 
-dotenv.config();
+const PORT = Number(process.env.PORT) || 4000;
+const HOST = "0.0.0.0";
 
-const app = express();
+const server = app.listen(PORT, HOST, () => {
+  console.log(`FixNear API Gateway running on http://${HOST}:${PORT}`);
+});
 
-const PORT = process.env.PORT || 4000;
+function shutdown(signal) {
+  console.log(`${signal} received. Closing gateway...`);
 
-// Parse incoming JSON request bodies
-app.use(express.json());
+  server.close((error) => {
+    if (error) {
+      console.error("Error during shutdown:", error);
+      process.exitCode = 1;
+      return;
+    }
 
-// Health check endpoint
-app.get("/health", (req, res) => {
-  res.status(200).json({
-    success: true,
-    service: "FixNear API Gateway",
-    message: "API Gateway is running",
+    console.log("Gateway closed gracefully.");
   });
-});
+}
 
-// Handle unknown routes
-app.use((req, res) => {
-  res.status(404).json({
-    success: false,
-    message: "Route not found",
-  });
-});
-
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(`FixNear API Gateway running on http://localhost:${PORT}`);
-});
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("SIGINT", () => shutdown("SIGINT"));
