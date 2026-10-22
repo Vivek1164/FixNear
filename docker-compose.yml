@@ -1,0 +1,42 @@
+
+services:
+  mongodb:
+    image: mongo:8
+    restart: unless-stopped
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test:
+        - CMD
+        - mongosh
+        - --quiet
+        - --eval
+        - "db.adminCommand('ping').ok"
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  user-service:
+    build:
+      context: ./services/user-service
+    restart: unless-stopped
+    environment:
+      PORT: 4001
+      NODE_ENV: production
+      MONGODB_URI: mongodb://mongodb:27017/fixnear_users
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?Set JWT_ACCESS_SECRET in root .env}
+      JWT_ACCESS_EXPIRES_IN: 15m
+      FRONTEND_URL: http://localhost:5173
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    expose:
+      - "4001"
+
+  # Keep your existing api-gateway service here.
+  # Set its USER_SERVICE_URL to:
+  # http://user-service:4001
+  # and add user-service to its depends_on if appropriate.
+
+volumes:
+  mongo_data:
