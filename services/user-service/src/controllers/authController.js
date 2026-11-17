@@ -41,3 +41,23 @@ export async function updateProfile(req, res) {
     data: { user },
   });
 }
+
+export async function verifyEmail(req, res) {
+  const result = await authService.verifyUserEmail(req.validatedBody.token);
+
+  res.status(200).json({
+    success: true,
+    message: result.message,
+  });
+}
+
+export async function resendVerification(req, res) {
+  const result = await authService.resendVerificationEmail(
+    req.validatedBody.email,
+  );
+
+  res.status(200).json({
+    success: true,
+    message: result.message,
+  });
+}

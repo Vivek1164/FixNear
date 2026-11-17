@@ -2,6 +2,11 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import User from "../models/User.js";
 import { AppError } from "../utils/AppError.js";
+import { sendVerificationEmail } from "../config/email.js";
+import {
+  createVerificationToken,
+  hashVerificationToken,
+} from "../utils/verificationToken.js";
 
 const ACCESS_EXPIRES_IN = process.env.JWT_ACCESS_EXPIRES_IN || "15m";
 
@@ -35,27 +40,47 @@ export async function registerUser(data) {
 
   const passwordHash = await bcrypt.hash(data.password, 12);
 
+  const { token, tokenHash, expiresAt } = createVerificationToken();
+
+  let user;
+
   try {
-    const user = await User.create({
+    user = await User.create({
       name: data.name,
       email,
       passwordHash,
       role: "customer",
+      emailVerified: false,
+      emailVerificationTokenHash: tokenHash,
+      emailVerificationExpiresAt: expiresAt,
     });
-
-    return {
-      user: toSafeUser(user),
-      accessToken: createAccessToken(user),
-    };
   } catch (error) {
-    // The unique MongoDB index also protects against
-    // two concurrent registrations for the same email.
     if (error.code === 11000) {
       throw new AppError(409, "Email is already registered");
     }
 
     throw error;
   }
+  console.log("user", user);
+
+  try {
+    await sendVerificationEmail(user.email, token);
+  } catch (error) {
+    console.error("Verification email delivery failed");
+
+    // Keep the account unverified. The user can request
+    // another verification email.
+    throw new AppError(
+      503,
+      "Account created, but email delivery failed. Please request a new verification email.",
+    );
+  }
+
+  console.log("Verification email sent");
+
+  return {
+    message: "Account created. Please verify your email before logging in.",
+  };
 }
 
 export async function loginUser(data) {
@@ -75,6 +100,10 @@ export async function loginUser(data) {
 
   if (!passwordMatches || !user.isActive) {
     throw new AppError(401, "Invalid email or password");
+  }
+
+  if (user.emailVerified !== true) {
+    throw new AppError(403, "Please verify your email before logging in");
   }
 
   return {
@@ -105,4 +134,76 @@ export async function updateUserProfile(userId, data) {
   }
 
   return toSafeUser(user);
+}
+
+export async function verifyUserEmail(token) {
+  if (typeof token !== "string" || !/^[a-f0-9]{64}$/i.test(token)) {
+    throw new AppError(400, "Invalid or expired verification token");
+  }
+
+  const tokenHash = hashVerificationToken(token);
+
+  const user = await User.findOneAndUpdate(
+    {
+      emailVerificationTokenHash: tokenHash,
+      emailVerificationExpiresAt: { $gt: new Date() },
+      emailVerified: false,
+    },
+    {
+      $set: { emailVerified: true },
+      $unset: {
+        emailVerificationTokenHash: 1,
+        emailVerificationExpiresAt: 1,
+      },
+    },
+    {
+      new: true,
+    },
+  );
+
+  if (!user) {
+    throw new AppError(400, "Invalid or expired verification token");
+  }
+
+  return {
+    message: "Email verified successfully. You can now log in.",
+  };
+}
+
+export async function resendVerificationEmail(emailInput) {
+  const email = emailInput.toLowerCase().trim();
+
+  const user = await User.findOne({ email }).select(
+    "+emailVerificationTokenHash +emailVerificationExpiresAt",
+  );
+
+  // Return the same public result for unknown, verified,
+  // or successfully processed accounts.
+  const response = {
+    message: "If the account requires verification, an email will be sent.",
+  };
+
+  if (!user || user.emailVerified) {
+    return response;
+  }
+
+  const { token, tokenHash, expiresAt } = createVerificationToken();
+
+  // Replace the previous token before sending the new email.
+  user.emailVerificationTokenHash = tokenHash;
+  user.emailVerificationExpiresAt = expiresAt;
+
+  await user.save();
+
+  try {
+    await sendVerificationEmail(user.email, token);
+  } catch (error) {
+    console.error("Verification email delivery failed");
+    throw new AppError(
+      503,
+      "Unable to send verification email. Try again later.",
+    );
+  }
+
+  return response;
 }
