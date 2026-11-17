@@ -42,6 +42,8 @@ app.get("/health", (req, res) => {
 
 app.use("/users/register", authLimiter);
 app.use("/users/login", authLimiter);
+app.use("/users/forgot-password", authLimiter);
+app.use("/users/reset-password", authLimiter);
 
 app.use("/users", userRoutes);
 

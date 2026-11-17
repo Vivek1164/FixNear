@@ -26,3 +26,16 @@ export const resendVerificationSchema = z
     email: z.string().trim().email().max(254),
   })
   .strict();
+
+export const forgotPasswordSchema = z
+  .object({
+    email: z.string().trim().email().max(254),
+  })
+  .strict();
+
+export const resetPasswordSchema = z
+  .object({
+    token: z.string().regex(/^[a-f0-9]{64}$/i),
+    newPassword: z.string().min(6).max(12),
+  })
+  .strict();

@@ -48,3 +48,27 @@ export async function sendVerificationEmail(email, token) {
     ].join("\n"),
   });
 }
+
+export async function sendPasswordResetEmail(email, token) {
+  const mailer = getTransporter();
+
+  const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
+
+  const resetLink = `${frontendUrl}/reset-password?token=${encodeURIComponent(token)}`;
+
+  await mailer.sendMail({
+    from: process.env.EMAIL_FROM || process.env.SMTP_USER,
+    to: email,
+    subject: "Reset your FixNear password",
+    text: [
+      "We received a request to reset your FixNear password.",
+      "",
+      "Open the following link to create a new password:",
+      resetLink,
+      "",
+      "This link expires in 15 minutes.",
+      "",
+      "If you did not request a password reset, ignore this email.",
+    ].join("\n"),
+  });
+}

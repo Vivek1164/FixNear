@@ -2,7 +2,14 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import User from "../models/User.js";
 import { AppError } from "../utils/AppError.js";
-import { sendVerificationEmail } from "../config/email.js";
+import {
+  sendVerificationEmail,
+  sendPasswordResetEmail,
+} from "../config/email.js";
+import {
+  createPasswordResetToken,
+  hashPasswordResetToken,
+} from "../utils/passwordResetToken.js";
 import {
   createVerificationToken,
   hashVerificationToken,
@@ -206,4 +213,104 @@ export async function resendVerificationEmail(emailInput) {
   }
 
   return response;
+}
+
+export async function forgotPassword(emailInput) {
+  const email = emailInput.toLowerCase().trim();
+
+  const user = await User.findOne({
+    email,
+    isActive: true,
+    emailVerified: true,
+  });
+
+  const response = {
+    message:
+      "If an eligible account exists, a password reset email will be sent.",
+  };
+
+  // Do not reveal whether the email exists.
+  if (!user) {
+    return response;
+  }
+
+  const { token, tokenHash, expiresAt } = createPasswordResetToken();
+
+  user.passwordResetTokenHash = tokenHash;
+  user.passwordResetExpiresAt = expiresAt;
+
+  await user.save();
+
+  try {
+    await sendPasswordResetEmail(user.email, token);
+  } catch (error) {
+    console.error("Password reset email delivery failed");
+
+    // Remove the unused reset token if email delivery fails.
+    await User.updateOne(
+      {
+        _id: user._id,
+        passwordResetTokenHash: tokenHash,
+      },
+      {
+        $unset: {
+          passwordResetTokenHash: 1,
+          passwordResetExpiresAt: 1,
+        },
+      },
+    );
+
+    throw new AppError(
+      503,
+      "Unable to send password reset email. Please try again later.",
+    );
+  }
+
+  return response;
+}
+
+export async function resetPassword(token, newPassword) {
+  if (typeof token !== "string" || !/^[a-f0-9]{64}$/i.test(token)) {
+    throw new AppError(400, "Invalid or expired password reset token");
+  }
+
+  const tokenHash = hashPasswordResetToken(token);
+
+  // Hash the password before consuming the token.
+  const passwordHash = await bcrypt.hash(newPassword, 12);
+
+  const now = new Date();
+
+  // Atomic operation: only one request can consume
+  // a valid reset token.
+  const user = await User.findOneAndUpdate(
+    {
+      passwordResetTokenHash: tokenHash,
+      passwordResetExpiresAt: { $gt: now },
+      emailVerified: true,
+      isActive: true,
+    },
+    {
+      $set: {
+        passwordHash,
+        passwordChangedAt: now,
+      },
+      $unset: {
+        passwordResetTokenHash: 1,
+        passwordResetExpiresAt: 1,
+      },
+    },
+    {
+      new: true,
+      runValidators: true,
+    },
+  );
+
+  if (!user) {
+    throw new AppError(400, "Invalid or expired password reset token");
+  }
+
+  return {
+    message: "Password reset successfully. Please log in again.",
+  };
 }

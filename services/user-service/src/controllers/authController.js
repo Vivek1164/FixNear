@@ -61,3 +61,24 @@ export async function resendVerification(req, res) {
     message: result.message,
   });
 }
+
+export async function forgotPassword(req, res) {
+  const result = await authService.forgotPassword(req.validatedBody.email);
+
+  res.status(200).json({
+    success: true,
+    message: result.message,
+  });
+}
+
+export async function resetPassword(req, res) {
+  const result = await authService.resetPassword(
+    req.validatedBody.token,
+    req.validatedBody.newPassword,
+  );
+
+  res.status(200).json({
+    success: true,
+    message: result.message,
+  });
+}

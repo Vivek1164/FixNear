@@ -7,6 +7,8 @@ import {
   loginSchema,
   verifyEmailSchema,
   resendVerificationSchema,
+  forgotPasswordSchema,
+  resetPasswordSchema,
 } from "../validators/authValidator.js";
 import { z } from "zod";
 
@@ -34,13 +36,25 @@ router.post(
   "/resend-verification",
   validate(resendVerificationSchema),
   authController.resendVerification,
-);  
+);
 
 router.patch(
   "/me",
   authenticate,
   validate(updateProfileSchema),
   authController.updateProfile,
+);
+
+router.post(
+  "/forgot-password",
+  validate(forgotPasswordSchema),
+  authController.forgotPassword,
+);
+
+router.post(
+  "/reset-password",
+  validate(resetPasswordSchema),
+  authController.resetPassword,
 );
 
 export default router;
